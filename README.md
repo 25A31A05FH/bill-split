@@ -1,8 +1,4 @@
-You're right bro. You want a **proper software-product README** — clean, restrained, technical, no cheesy quotes, no fake startup language, no ASCII diagrams.
 
-Use this exact `README.md`:
-
-````markdown
 # ROOMMATE
 
 A shared expense management application for roommates and shared households.
@@ -228,7 +224,4 @@ Potential extensions include:
 
 This project was developed as a software hackathon project.
 
-```
 
-This version is intentionally **boring in the right way**: professional terminology, accurate scope, proper technical documentation, and no exaggerated marketing claims.
-```
