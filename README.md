@@ -1,27 +1,62 @@
-# React + TypeScript + Vite
+# ROOMMATE
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+### Shared expenses. Finally simple.
 
-Currently, two official plugins are available:
+<br />
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react/README.md) uses [Babel](https://babeljs.io/) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+**ROOMMATE** is an expense coordination platform for shared living.
 
-## Expanding the ESLint configuration
+It is built around a simple observation:
 
-If you are developing a production application, we recommend updating the configuration to enable type aware lint rules:
+> **The person who records an expense isn't necessarily the person who paid for it.  
+> And the people who paid aren't necessarily the people who used it.**
 
-- Configure the top-level `parserOptions` property like this:
+ROOMMATE models those relationships separately — then turns them into a clear settlement.
 
-```js
-   parserOptions: {
-    ecmaVersion: 'latest',
-    sourceType: 'module',
-    project: ['./tsconfig.json', './tsconfig.node.json'],
-    tsconfigRootDir: __dirname,
-   },
-```
+<br />
 
-- Replace `plugin:@typescript-eslint/recommended` to `plugin:@typescript-eslint/recommended-type-checked` or `plugin:@typescript-eslint/strict-type-checked`
-- Optionally add `plugin:@typescript-eslint/stylistic-type-checked`
-- Install [eslint-plugin-react](https://github.com/jsx-eslint/eslint-plugin-react) and add `plugin:react/recommended` & `plugin:react/jsx-runtime` to the `extends` list
+[**Live Demo ↗**](https://bill-split-hanish6.vercel.app/)  
+[**Source ↗**](https://github.com/25A31A05FH/bill-split)
+
+---
+
+## The idea
+
+Shared expenses are rarely as simple as:
+
+`₹1200 ÷ 4`
+
+Someone pays.
+
+Someone contributes.
+
+Someone doesn't.
+
+Someone else joins the expense.
+
+At the end of the month, everyone asks the same question:
+
+**"Okay... who actually owes whom?"**
+
+ROOMMATE handles that calculation for you.
+
+---
+
+## How it works
+
+```text
+                    EXPENSE
+                       │
+                       ▼
+                    GROUP
+                       │
+             ┌─────────┴─────────┐
+             ▼                   ▼
+        CONTRIBUTORS         PARTICIPANTS
+             │                   │
+             └─────────┬─────────┘
+                       ▼
+                    BALANCES
+                       │
+                       ▼
+                  SETTLEMENT
