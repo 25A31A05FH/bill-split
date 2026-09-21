@@ -15,7 +15,6 @@ import {
   UserPlus,
   Sparkles,
   Layers3,
-  Check,
 } from 'lucide-react';
 
 import Sidebar from '../components/layout/Sidebar';
@@ -72,17 +71,8 @@ const Groups: React.FC = () => {
     useState<SplitGroup['type']>('household');
   const [description, setDescription] = useState('');
 
-  const [selectedMembers, setSelectedMembers] =
-    useState<string[]>([]);
-
   const [isCreating, setIsCreating] = useState(false);
   const [createError, setCreateError] = useState('');
-
-  /*
-   * ----------------------------------------
-   * FILTER GROUPS
-   * ----------------------------------------
-   */
 
   const filteredGroups = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -105,12 +95,6 @@ const Groups: React.FC = () => {
     });
   }, [groups, search]);
 
-  /*
-   * ----------------------------------------
-   * GROUP HELPERS
-   * ----------------------------------------
-   */
-
   const getGroupIcon = (
     groupType: SplitGroup['type']
   ) => {
@@ -131,48 +115,29 @@ const Groups: React.FC = () => {
     );
   };
 
-  const getGroupMembers = (
-    group: SplitGroup
-  ) => {
-    const memberIds = group.memberIds ?? [];
-
-    return users.filter((user) =>
-      memberIds.includes(user.id)
-    );
-  };
-
-  const getGroupExpenseTotal = (
-    group: SplitGroup
-  ) => {
+  const getGroupExpenseTotal = (group: SplitGroup) => {
     return expenses
-      .filter(
-        (expense) =>
-          expense.groupId === group.id
-      )
-      .reduce(
-        (sum, expense) => sum + expense.amount,
-        0
-      );
-  };
+      .filter((expense) => {
+        if (expense.groupId) {
+          return expense.groupId === group.id;
+        }
 
-  /*
-   * ----------------------------------------
-   * CREATE MODAL
-   * ----------------------------------------
-   */
+        const normalizedName = group.name.trim().toLowerCase();
+        const description = expense.description?.toLowerCase() || '';
+        const location = expense.location?.toLowerCase() || '';
+
+        return (
+          description.includes(normalizedName) ||
+          location.includes(normalizedName)
+        );
+      })
+      .reduce((sum, expense) => sum + expense.amount, 0);
+  };
 
   const resetForm = () => {
     setName('');
     setType('household');
     setDescription('');
-
-    /*
-     * New groups start with no selected members.
-     * The user explicitly chooses who belongs to
-     * this group.
-     */
-    setSelectedMembers([]);
-
     setCreateError('');
     setIsCreating(false);
   };
@@ -191,44 +156,6 @@ const Groups: React.FC = () => {
     setShowCreateGroup(false);
   };
 
-  const toggleMember = (userId: string) => {
-    if (isCreating) {
-      return;
-    }
-
-    setSelectedMembers((current) =>
-      current.includes(userId)
-        ? current.filter((id) => id !== userId)
-        : [...current, userId]
-    );
-
-    setCreateError('');
-  };
-
-  const selectAllMembers = () => {
-    if (isCreating) {
-      return;
-    }
-
-    setSelectedMembers(users.map((user) => user.id));
-    setCreateError('');
-  };
-
-  const clearAllMembers = () => {
-    if (isCreating) {
-      return;
-    }
-
-    setSelectedMembers([]);
-    setCreateError('');
-  };
-
-  /*
-   * ----------------------------------------
-   * CREATE GROUP
-   * ----------------------------------------
-   */
-
   const handleCreateGroup = async (
     event: React.FormEvent<HTMLFormElement>
   ) => {
@@ -238,16 +165,7 @@ const Groups: React.FC = () => {
     const cleanDescription = description.trim();
 
     if (!cleanName) {
-      setCreateError(
-        'Please enter a group name.'
-      );
-      return;
-    }
-
-    if (selectedMembers.length === 0) {
-      setCreateError(
-        'Select at least one roommate for this group.'
-      );
+      setCreateError('Please enter a group name.');
       return;
     }
 
@@ -262,32 +180,20 @@ const Groups: React.FC = () => {
       await addGroup({
         name: cleanName,
         type,
-        description:
-          cleanDescription || undefined,
-        memberIds: selectedMembers,
+        description: cleanDescription || undefined,
       });
 
       resetForm();
       setShowCreateGroup(false);
     } catch (error) {
-      console.error(
-        'Failed to create group:',
-        error
-      );
+      console.error('Failed to create group:', error);
 
       setCreateError(
         'Could not create the group. Please try again.'
       );
-
       setIsCreating(false);
     }
   };
-
-  /*
-   * ----------------------------------------
-   * DELETE GROUP
-   * ----------------------------------------
-   */
 
   const handleDeleteGroup = async (
     group: SplitGroup
@@ -303,18 +209,9 @@ const Groups: React.FC = () => {
     try {
       await deleteGroup(group.id);
     } catch (error) {
-      console.error(
-        'Failed to delete group:',
-        error
-      );
+      console.error('Failed to delete group:', error);
     }
   };
-
-  /*
-   * ----------------------------------------
-   * UI
-   * ----------------------------------------
-   */
 
   return (
     <div className="min-h-screen overflow-x-hidden bg-slate-950 text-white">
@@ -619,9 +516,6 @@ const Groups: React.FC = () => {
                         group.type
                       );
 
-                      const groupMembers =
-                        getGroupMembers(group);
-
                       const expenseTotal =
                         getGroupExpenseTotal(group);
 
@@ -704,7 +598,6 @@ const Groups: React.FC = () => {
                             </p>
                           </div>
 
-                          {/* GROUP STATS */}
                           <div className="relative mt-6 grid grid-cols-2 gap-2">
                             <div className="rounded-xl border border-white/[0.06] bg-black/10 p-3">
                               <p className="text-[9px] font-semibold uppercase tracking-[0.14em] text-white/20">
@@ -715,14 +608,14 @@ const Groups: React.FC = () => {
                                 <Users className="h-4 w-4 text-cyan-400" />
 
                                 <span className="font-semibold">
-                                  {groupMembers.length}
+                                  {users.length}
                                 </span>
                               </div>
                             </div>
 
                             <div className="rounded-xl border border-white/[0.06] bg-black/10 p-3">
                               <p className="text-[9px] font-semibold uppercase tracking-[0.14em] text-white/20">
-                                Group spend
+                                Matched spend
                               </p>
 
                               <div className="mt-2">
@@ -736,11 +629,10 @@ const Groups: React.FC = () => {
                             </div>
                           </div>
 
-                          {/* MEMBERS */}
                           <div className="relative mt-5 flex items-center justify-between border-t border-white/[0.06] pt-4">
                             <div className="flex -space-x-2">
-                              {groupMembers
-                                .slice(0, 5)
+                              {users
+                                .slice(0, 4)
                                 .map((user) => (
                                   <motion.div
                                     key={user.id}
@@ -756,25 +648,16 @@ const Groups: React.FC = () => {
                                       .toUpperCase()}
                                   </motion.div>
                                 ))}
-
-                              {groupMembers.length > 5 && (
-                                <div className="flex h-8 w-8 items-center justify-center rounded-full border-2 border-slate-950 bg-slate-800 text-[9px] font-bold text-white/60">
-                                  +
-                                  {groupMembers.length -
-                                    5}
-                                </div>
-                              )}
                             </div>
 
-                            <div className="flex items-center gap-1.5 text-xs font-semibold text-white/30">
-                              <span>
-                                {groupMembers.length === 1
-                                  ? '1 member'
-                                  : `${groupMembers.length} members`}
-                              </span>
+                            <button
+                              type="button"
+                              className="group/link flex items-center gap-1.5 text-xs font-semibold text-white/30 transition hover:text-emerald-400"
+                            >
+                              View group
 
-                              <ChevronRight className="h-3.5 w-3.5" />
-                            </div>
+                              <ChevronRight className="h-3.5 w-3.5 transition-transform duration-200 group-hover/link:translate-x-1" />
+                            </button>
                           </div>
                         </motion.div>
                       );
@@ -857,11 +740,10 @@ const Groups: React.FC = () => {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/70 p-4 backdrop-blur-md"
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-md"
             onMouseDown={(event) => {
               if (
-                event.target ===
-                  event.currentTarget &&
+                event.target === event.currentTarget &&
                 !isCreating
               ) {
                 closeCreateModal();
@@ -888,7 +770,7 @@ const Groups: React.FC = () => {
                 duration: 0.35,
                 ease: [0.22, 1, 0.36, 1],
               }}
-              className="my-8 w-full max-w-lg overflow-hidden rounded-[2rem] border border-white/[0.1] bg-slate-900 shadow-2xl shadow-black/50"
+              className="w-full max-w-lg overflow-hidden rounded-[2rem] border border-white/[0.1] bg-slate-900 shadow-2xl shadow-black/50"
             >
               {/* MODAL HEADER */}
               <div className="relative border-b border-white/[0.07] px-6 py-6">
@@ -906,8 +788,7 @@ const Groups: React.FC = () => {
                     </h2>
 
                     <p className="mt-1 text-sm text-white/30">
-                      Choose exactly who belongs to
-                      this group.
+                      Give your shared expenses a home.
                     </p>
                   </div>
 
@@ -955,7 +836,6 @@ const Groups: React.FC = () => {
                     {groupTypeOptions.map(
                       (option) => {
                         const Icon = option.icon;
-
                         const active =
                           type === option.value;
 
@@ -984,117 +864,6 @@ const Groups: React.FC = () => {
                         );
                       }
                     )}
-                  </div>
-                </div>
-
-                {/* MEMBERS */}
-                <div>
-                  <div className="mb-2 flex items-center justify-between">
-                    <label className="block text-sm font-medium text-white/70">
-                      Group members
-                    </label>
-
-                    <span className="text-xs text-emerald-400">
-                      {selectedMembers.length}/
-                      {users.length} selected
-                    </span>
-                  </div>
-
-                  <div className="mb-3 flex gap-2">
-                    <button
-                      type="button"
-                      disabled={
-                        isCreating ||
-                        selectedMembers.length ===
-                          users.length
-                      }
-                      onClick={selectAllMembers}
-                      className="rounded-lg border border-white/[0.08] bg-white/[0.03] px-3 py-1.5 text-[11px] font-semibold text-white/50 transition hover:bg-white/[0.06] hover:text-white disabled:opacity-30"
-                    >
-                      Select all
-                    </button>
-
-                    <button
-                      type="button"
-                      disabled={
-                        isCreating ||
-                        selectedMembers.length === 0
-                      }
-                      onClick={clearAllMembers}
-                      className="rounded-lg border border-white/[0.08] bg-white/[0.03] px-3 py-1.5 text-[11px] font-semibold text-white/50 transition hover:bg-white/[0.06] hover:text-white disabled:opacity-30"
-                    >
-                      Clear
-                    </button>
-                  </div>
-
-                  <div className="space-y-2">
-                    {users.map((user) => {
-                      const selected =
-                        selectedMembers.includes(
-                          user.id
-                        );
-
-                      return (
-                        <motion.button
-                          key={user.id}
-                          type="button"
-                          disabled={isCreating}
-                          whileTap={{
-                            scale: 0.985,
-                          }}
-                          onClick={() =>
-                            toggleMember(user.id)
-                          }
-                          className={`flex w-full items-center justify-between rounded-xl border px-4 py-3 text-left transition-all duration-200 ${
-                            selected
-                              ? 'border-emerald-400/25 bg-emerald-400/[0.08]'
-                              : 'border-white/[0.08] bg-white/[0.025] hover:border-white/[0.14] hover:bg-white/[0.05]'
-                          }`}
-                        >
-                          <div className="flex items-center gap-3">
-                            <div
-                              className={`flex h-9 w-9 items-center justify-center rounded-full text-xs font-bold ${
-                                selected
-                                  ? 'bg-emerald-400 text-slate-950'
-                                  : 'bg-white/[0.07] text-white/60'
-                              }`}
-                            >
-                              {user.name
-                                .charAt(0)
-                                .toUpperCase()}
-                            </div>
-
-                            <div>
-                              <p
-                                className={`text-sm font-semibold ${
-                                  selected
-                                    ? 'text-white'
-                                    : 'text-white/60'
-                                }`}
-                              >
-                                {user.name}
-                              </p>
-
-                              <p className="text-[11px] text-white/25">
-                                {user.email}
-                              </p>
-                            </div>
-                          </div>
-
-                          <div
-                            className={`flex h-5 w-5 items-center justify-center rounded-md border transition ${
-                              selected
-                                ? 'border-emerald-400 bg-emerald-400 text-slate-950'
-                                : 'border-white/15 bg-white/[0.02]'
-                            }`}
-                          >
-                            {selected && (
-                              <Check className="h-3.5 w-3.5" />
-                            )}
-                          </div>
-                        </motion.button>
-                      );
-                    })}
                   </div>
                 </div>
 
@@ -1151,11 +920,9 @@ const Groups: React.FC = () => {
                   <Users className="mt-0.5 h-4 w-4 shrink-0 text-cyan-400" />
 
                   <p className="text-xs leading-5 text-white/30">
-                    Only the roommates selected here
-                    will be available when adding an
-                    expense to this group. You can still
-                    choose specific participants for each
-                    individual expense.
+                    All current roommates will be
+                    available for expenses associated
+                    with this group.
                   </p>
                 </div>
 
@@ -1173,9 +940,7 @@ const Groups: React.FC = () => {
                   <motion.button
                     type="submit"
                     disabled={
-                      !name.trim() ||
-                      selectedMembers.length === 0 ||
-                      isCreating
+                      !name.trim() || isCreating
                     }
                     whileTap={{
                       scale: 0.98,

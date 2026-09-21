@@ -32,6 +32,7 @@ import {
   Sparkles,
   Wallet,
   CircleCheck,
+  Layers3,
 } from 'lucide-react';
 
 import Sidebar from './components/layout/Sidebar';
@@ -45,6 +46,7 @@ import { useExpenses } from './context/ExpenseContext';
 import Expenses from './pages/Expenses';
 import Bills from './pages/Bills';
 import Groups from './pages/Groups';
+import MonthlyCommandCenter from './components/features/MonthlyCommandCenter';
 
 
 /* =========================================================
@@ -314,6 +316,132 @@ const calculateExpenseSettlements = (
 
 
 /* =========================================================
+   SETTLEMENT HELPER FOR DASHBOARD/GROUPS
+========================================================= */
+
+interface ExpenseSettlementInput {
+  amount: number;
+  participants?: string[];
+  contributions?: {
+    userId: string;
+    amount: number;
+  }[];
+}
+
+const calculateSettlementsForExpenses = (
+  expenseList: ExpenseSettlementInput[],
+  userIds: string[],
+  settledPayments: ExpenseSettlement[]
+): ExpenseSettlement[] => {
+  const balances = new Map<string, number>();
+
+  userIds.forEach((id) => {
+    balances.set(id, 0);
+  });
+
+  expenseList.forEach((expense) => {
+    const selectedParticipants =
+      expense.participants?.filter((id) => balances.has(id)) ?? [];
+
+    const participants =
+      selectedParticipants.length > 0
+        ? selectedParticipants
+        : userIds;
+
+    if (participants.length === 0) {
+      return;
+    }
+
+    const totalPaise = Math.round(expense.amount * 100);
+    const baseShare = Math.floor(totalPaise / participants.length);
+    const remainder = totalPaise % participants.length;
+
+    participants.forEach((userId, index) => {
+      const share =
+        baseShare + (index < remainder ? 1 : 0);
+
+      balances.set(
+        userId,
+        (balances.get(userId) ?? 0) - share
+      );
+    });
+
+    expense.contributions?.forEach((contribution) => {
+      if (!balances.has(contribution.userId)) {
+        return;
+      }
+
+      balances.set(
+        contribution.userId,
+        (balances.get(contribution.userId) ?? 0) +
+          Math.round(contribution.amount * 100)
+      );
+    });
+  });
+
+  const creditors = Array.from(balances.entries())
+    .filter(([, balance]) => balance > 0)
+    .map(([userId, balance]) => ({ userId, balance }))
+    .sort((a, b) => b.balance - a.balance);
+
+  const debtors = Array.from(balances.entries())
+    .filter(([, balance]) => balance < 0)
+    .map(([userId, balance]) => ({
+      userId,
+      balance: Math.abs(balance),
+    }))
+    .sort((a, b) => b.balance - a.balance);
+
+  const result: ExpenseSettlement[] = [];
+  let creditorIndex = 0;
+  let debtorIndex = 0;
+
+  while (
+    creditorIndex < creditors.length &&
+    debtorIndex < debtors.length
+  ) {
+    const creditor = creditors[creditorIndex];
+    const debtor = debtors[debtorIndex];
+    const payment = Math.min(
+      creditor.balance,
+      debtor.balance
+    );
+
+    if (payment > 0) {
+      result.push({
+        fromUserId: debtor.userId,
+        toUserId: creditor.userId,
+        amount: payment / 100,
+      });
+    }
+
+    creditor.balance -= payment;
+    debtor.balance -= payment;
+
+    if (creditor.balance === 0) {
+      creditorIndex++;
+    }
+
+    if (debtor.balance === 0) {
+      debtorIndex++;
+    }
+  }
+
+  return result.filter(
+    (payment) =>
+      !settledPayments.some(
+        (settled) =>
+          settled.fromUserId === payment.fromUserId &&
+          settled.toUserId === payment.toUserId &&
+          Math.abs(
+            settled.amount - payment.amount
+          ) < 0.01
+      )
+  );
+};
+
+
+/* =========================================================
    DASHBOARD
 ========================================================= */
 
@@ -321,10 +449,15 @@ const Dashboard: React.FC = () => {
   const {
     expenses,
     users,
+    groups,
     addExpense,
     addUser,
     deleteExpense,
+    deleteUser,
     settlements,
+    settledPayments,
+    settlePayment,
+    unsettlePayment,
   } = useExpenses();
 
   const [sidebarOpen, setSidebarOpen] =
@@ -347,6 +480,13 @@ const Dashboard: React.FC = () => {
     expandedExpense,
     setExpandedExpense,
   ] = useState<string | null>(null);
+
+  const [selectedGroupId, setSelectedGroupId] =
+    useState<string>('all');
+
+  const selectedGroup = groups.find(
+    (group) => group.id === selectedGroupId
+  );
 
 
   /* =======================================================
@@ -387,7 +527,8 @@ const Dashboard: React.FC = () => {
         expenseData.participants,
 
       groupId:
-        expenseData.groupId || undefined,
+        expenseData.groupId ||
+        undefined,
     });
 
     setShowAddExpense(false);
@@ -429,6 +570,55 @@ const Dashboard: React.FC = () => {
   };
 
 
+  const roommateHasExpenseHistory = (userId: string) => {
+    return expenses.some((expense) => {
+      const payer = expense.payerId === userId;
+      const participant =
+        expense.participants?.includes(userId) ?? false;
+      const contributor =
+        expense.contributions?.some(
+          (contribution) => contribution.userId === userId
+        ) ?? false;
+
+      return payer || participant || contributor;
+    });
+  };
+
+  const handleDeleteRoommate = async (userId: string) => {
+    const user = users.find((item) => item.id === userId);
+
+    if (!user) {
+      return;
+    }
+
+    if (roommateHasExpenseHistory(userId)) {
+      window.alert(
+        `${user.name} cannot be removed because they are already linked to an expense.`
+      );
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Remove ${user.name} from ROOMMATE?\n\nThey have no expense history, so removing them is safe.`
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      await deleteUser(userId);
+    } catch (error) {
+      console.error(error);
+      window.alert(
+        error instanceof Error
+          ? error.message
+          : 'Could not remove this roommate.'
+      );
+    }
+  };
+
+
   /* =======================================================
      DELETE
   ======================================================= */
@@ -459,50 +649,75 @@ const Dashboard: React.FC = () => {
 
 
   /* =======================================================
-     TOTAL
+     FILTERED DASHBOARD SPACE
   ======================================================= */
+
+  const visibleExpenses = useMemo(() => {
+    if (selectedGroupId === 'all') {
+      return expenses;
+    }
+
+    return expenses.filter(
+      (expense) => expense.groupId === selectedGroupId
+    );
+  }, [expenses, selectedGroupId]);
 
   const totalExpenses = useMemo(
     () =>
-      expenses.reduce(
-        (total, expense) =>
-          total + expense.amount,
+      visibleExpenses.reduce(
+        (total, expense) => total + expense.amount,
         0
       ),
-    [expenses]
+    [visibleExpenses]
   );
+
+  const dashboardSettlements = useMemo(() => {
+    if (selectedGroupId === 'all') {
+      return settlements;
+    }
+
+    const memberIds = selectedGroup?.memberIds?.length
+      ? selectedGroup.memberIds
+      : users.map((user) => user.id);
+
+    return calculateSettlementsForExpenses(
+      visibleExpenses,
+      memberIds,
+      settledPayments
+    );
+  }, [
+    selectedGroupId,
+    selectedGroup,
+    settlements,
+    settledPayments,
+    users,
+    visibleExpenses,
+  ]);
 
 
   /* =======================================================
      SEARCH
   ======================================================= */
 
-  const filteredExpenses =
-    useMemo(() => {
-      const query =
-        search
-          .trim()
-          .toLowerCase();
+  const filteredExpenses = useMemo(() => {
+    const query = search.trim().toLowerCase();
 
-      if (!query) {
-        return expenses;
-      }
+    if (!query) {
+      return visibleExpenses;
+    }
 
-      return expenses.filter(
-        (expense) =>
-          expense.description
-            .toLowerCase()
-            .includes(query) ||
-          expense.location
-            ?.toLowerCase()
-            .includes(query)
-      );
-    }, [expenses, search]);
+    return visibleExpenses.filter(
+      (expense) =>
+        expense.description.toLowerCase().includes(query) ||
+        expense.location?.toLowerCase().includes(query)
+    );
+  }, [visibleExpenses, search]);
 
 
   /* =======================================================
      USER
   ======================================================= */
+
 
   const getUserName = (
     userId: string
@@ -517,14 +732,34 @@ const Dashboard: React.FC = () => {
   };
 
 
+  const handleSettlePayment = async (
+    payment: ExpenseSettlement
+  ) => {
+    const confirmed = window.confirm(
+      `${getUserName(payment.fromUserId)} paid ${getUserName(payment.toUserId)} ₹${payment.amount.toFixed(2)}?\n\nThis marks the payment as completed in ROOMMATE.`
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    await settlePayment(payment);
+  };
+
+  const handleUndoSettlement = async (
+    payment: ExpenseSettlement
+  ) => {
+    await unsettlePayment(payment);
+  };
+
+
   /* =======================================================
      PENDING
   ======================================================= */
 
   const pendingAmount =
-    settlements.reduce(
-      (sum, settlement) =>
-        sum + settlement.amount,
+    dashboardSettlements.reduce(
+      (sum, settlement) => sum + settlement.amount,
       0
     );
 
@@ -540,9 +775,9 @@ const Dashboard: React.FC = () => {
       icon: IndianRupee,
       accent: 'emerald',
       sub:
-        expenses.length === 0
+        visibleExpenses.length === 0
           ? 'No expenses yet'
-          : `${expenses.length} recorded`,
+          : `${visibleExpenses.length} recorded`,
     },
     {
       label: 'To settle',
@@ -550,10 +785,10 @@ const Dashboard: React.FC = () => {
       icon: Wallet,
       accent: 'amber',
       sub:
-        settlements.length === 0
+        dashboardSettlements.length === 0
           ? 'Everyone is settled'
-          : `${settlements.length} payment${
-              settlements.length === 1
+          : `${dashboardSettlements.length} payment${
+              dashboardSettlements.length === 1
                 ? ''
                 : 's'
             } needed`,
@@ -650,6 +885,35 @@ const Dashboard: React.FC = () => {
               </motion.button>
 
 
+              <div className="relative hidden w-56 lg:block">
+
+                <Layers3 className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-emerald-400/70" />
+
+                <select
+                  value={selectedGroupId}
+                  onChange={(event) => {
+                    setSelectedGroupId(event.target.value);
+                    setExpandedExpense(null);
+                  }}
+                  className="h-10 w-full appearance-none rounded-lg border border-white/[0.07] bg-white/[0.025] pl-10 pr-3 text-sm text-white outline-none transition focus:border-emerald-400/30 focus:bg-white/[0.04]"
+                >
+                  <option value="all" className="bg-slate-950">
+                    All groups
+                  </option>
+                  {groups.map((group) => (
+                    <option
+                      key={group.id}
+                      value={group.id}
+                      className="bg-slate-950"
+                    >
+                      {group.name}
+                    </option>
+                  ))}
+                </select>
+
+              </div>
+
+
               <div className="relative hidden w-64 md:block">
 
                 <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white/25" />
@@ -661,7 +925,7 @@ const Dashboard: React.FC = () => {
                       event.target.value
                     )
                   }
-                  placeholder="Search expenses..."
+                  placeholder="Search expenses in this space..."
                   className="h-10 w-full rounded-lg border border-white/[0.07] bg-white/[0.025] pl-10 pr-4 text-sm text-white outline-none transition placeholder:text-white/20 focus:border-emerald-400/30 focus:bg-white/[0.04]"
                 />
 
@@ -1015,6 +1279,13 @@ const Dashboard: React.FC = () => {
 
 
           {/* =================================================
+              MONTHLY COMMAND CENTER
+          ================================================= */}
+
+          <MonthlyCommandCenter />
+
+
+          {/* =================================================
               SETTLEMENT
           ================================================= */}
 
@@ -1061,10 +1332,10 @@ const Dashboard: React.FC = () => {
               </div>
 
 
-              {settlements.length >
+              {dashboardSettlements.length >
                 0 && (
                 <span className="hidden text-xs text-white/25 sm:block">
-                  {settlements.length}{' '}
+                  {dashboardSettlements.length}{' '}
                   outstanding
                 </span>
               )}
@@ -1072,7 +1343,7 @@ const Dashboard: React.FC = () => {
             </div>
 
 
-            {settlements.length ===
+            {dashboardSettlements.length ===
             0 ? (
 
               <motion.div
@@ -1108,7 +1379,7 @@ const Dashboard: React.FC = () => {
 
               <div className="grid gap-3 md:grid-cols-2">
 
-                {settlements.map(
+                {dashboardSettlements.map(
                   (
                     settlement,
                     index
@@ -1197,9 +1468,17 @@ const Dashboard: React.FC = () => {
                             )}
                           </p>
 
-                          <p className="mt-0.5 text-[10px] text-white/20">
-                            to settle
-                          </p>
+                          <motion.button
+                            type="button"
+                            whileHover={{ y: -1 }}
+                            whileTap={{ scale: 0.97 }}
+                            onClick={() =>
+                              handleSettlePayment(settlement)
+                            }
+                            className="mt-2 rounded-lg border border-emerald-400/15 bg-emerald-400/[0.06] px-2.5 py-1.5 text-[10px] font-semibold text-emerald-400 transition hover:border-emerald-400/30 hover:bg-emerald-400/[0.1]"
+                          >
+                            Mark as settled
+                          </motion.button>
                         </div>
 
                       </div>
@@ -1216,6 +1495,110 @@ const Dashboard: React.FC = () => {
           </motion.section>
 
 
+
+
+          {/* =================================================
+              PAYMENTS SETTLED
+          ================================================= */}
+
+          <motion.section
+            initial={{
+              opacity: 0,
+              y: 20,
+            }}
+            whileInView={{
+              opacity: 1,
+              y: 0,
+            }}
+            viewport={{
+              once: true,
+              amount: 0.2,
+            }}
+            transition={{
+              duration: 0.45,
+            }}
+            className="mb-12"
+          >
+
+            <div className="mb-5 flex items-end justify-between">
+              <div>
+                <div className="mb-2 flex items-center gap-2">
+                  <CircleCheck className="h-3.5 w-3.5 text-emerald-400" />
+                  <span className="text-[10px] font-semibold uppercase tracking-[0.2em] text-emerald-400">
+                    Completed
+                  </span>
+                </div>
+                <h2 className="text-2xl font-semibold tracking-[-0.03em]">
+                  Payments settled
+                </h2>
+                <p className="mt-1 text-sm text-white/30">
+                  Completed roommate-to-roommate payments stay in the history.
+                </p>
+              </div>
+            </div>
+
+            {settledPayments.length === 0 ? (
+              <div className="rounded-xl border border-white/[0.07] bg-white/[0.02] p-6 text-sm text-white/30">
+                No payments have been marked as settled yet.
+              </div>
+            ) : (
+              <div className="grid gap-3 md:grid-cols-2">
+                {settledPayments
+                  .slice()
+                  .reverse()
+                  .slice(0, 8)
+                  .map((payment, index) => (
+                    <motion.div
+                      key={`${payment.fromUserId}-${payment.toUserId}-${payment.amount}-${index}`}
+                      initial={{
+                        opacity: 0,
+                        y: 10,
+                      }}
+                      whileInView={{
+                        opacity: 1,
+                        y: 0,
+                      }}
+                      viewport={{ once: true }}
+                      transition={{
+                        delay: index * 0.04,
+                      }}
+                      whileHover={{ y: -2 }}
+                      className="flex items-center gap-3 rounded-xl border border-white/[0.07] bg-white/[0.02] p-4"
+                    >
+                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-emerald-400/10 text-xs font-semibold text-emerald-400">
+                        {getUserName(
+                          payment.fromUserId
+                        ).charAt(0)}
+                      </div>
+
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-medium">
+                          {getUserName(payment.fromUserId)}
+                          {' → '}
+                          {getUserName(payment.toUserId)}
+                        </p>
+                        <p className="mt-1 text-xs text-white/25">
+                          ₹{payment.amount.toFixed(2)} · settled
+                        </p>
+                      </div>
+
+                      <motion.button
+                        type="button"
+                        whileHover={{ y: -1 }}
+                        whileTap={{ scale: 0.97 }}
+                        onClick={() =>
+                          handleUndoSettlement(payment)
+                        }
+                        className="rounded-lg border border-white/10 bg-white/[0.03] px-2.5 py-1.5 text-[10px] font-semibold text-white/45 transition hover:bg-white/[0.06] hover:text-white"
+                      >
+                        Undo
+                      </motion.button>
+                    </motion.div>
+                  ))}
+              </div>
+            )}
+
+          </motion.section>
           {/* =================================================
               MAIN CONTENT
           ================================================= */}
@@ -1987,7 +2370,35 @@ const Dashboard: React.FC = () => {
                         </p>
                       </div>
 
-                      <ChevronRight className="h-3.5 w-3.5 text-white/15 transition group-hover:translate-x-0.5 group-hover:text-white/35" />
+                      <motion.button
+                        type="button"
+                        whileHover={
+                          roommateHasExpenseHistory(user.id)
+                            ? undefined
+                            : { scale: 1.05 }
+                        }
+                        whileTap={
+                          roommateHasExpenseHistory(user.id)
+                            ? undefined
+                            : { scale: 0.95 }
+                        }
+                        onClick={() =>
+                          handleDeleteRoommate(user.id)
+                        }
+                        disabled={roommateHasExpenseHistory(user.id)}
+                        title={
+                          roommateHasExpenseHistory(user.id)
+                            ? 'Cannot remove: this roommate is linked to an expense.'
+                            : `Remove ${user.name}`
+                        }
+                        className={`rounded-lg p-2 transition ${
+                          roommateHasExpenseHistory(user.id)
+                            ? 'cursor-not-allowed text-white/10'
+                            : 'text-white/20 hover:bg-red-400/10 hover:text-red-400'
+                        }`}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </motion.button>
 
                     </motion.div>
 
@@ -2052,6 +2463,11 @@ const Dashboard: React.FC = () => {
 
         {showAddExpense && (
           <AddExpense
+            defaultGroupId={
+              selectedGroupId === 'all'
+                ? groups[0]?.id
+                : selectedGroupId
+            }
             onSubmit={
               handleAddExpense
             }

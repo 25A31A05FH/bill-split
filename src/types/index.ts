@@ -16,23 +16,13 @@ export interface Expense {
   amount: number;
   payerId: string;
   date: Date;
-
-  // Group this expense belongs to
-  groupId?: string;
-
-  // Expense details
   location?: string;
   receiptUrl?: string;
-
-  // Original expense information
   paidBy?: User;
   split?: Partial<User>[];
-
-  // Who actually contributed money
   contributions?: ExpenseContribution[];
-
-  // Who participated in / owes a share of this expense
   participants?: string[];
+  groupId?: string;
 }
 
 export interface Roommate {
@@ -50,23 +40,20 @@ export interface Bill {
   paidBy?: User;
   split?: Partial<Roommate>[];
   status: 'pending' | 'paid' | 'overdue';
+  groupId?: string;
 }
 
 export interface SplitGroup {
   id: string;
   name: string;
-
   type:
     | 'household'
     | 'entertainment'
     | 'utilities'
     | 'food'
     | 'other';
-
   description?: string;
-
-  // Roommates who belong to this group
-  memberIds: string[];
+  memberIds?: string[];
 }
 
 export interface Transaction {

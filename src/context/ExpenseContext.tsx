@@ -51,6 +51,9 @@ interface ExpenseContextType {
   deleteGroup: (id: string) => Promise<void>;
 
   settlements: Settlement[];
+  settledPayments: Settlement[];
+  settlePayment: (payment: Settlement) => Promise<void>;
+  unsettlePayment: (payment: Settlement) => Promise<void>;
 }
 
 export const ExpenseContext = createContext<
@@ -80,38 +83,29 @@ const initialUsers: User[] = [
   },
 ];
 
-/*
- * Every default group now has its own members.
- *
- * You can change these later from the Groups page.
- */
 const initialGroups: SplitGroup[] = [
   {
     id: 'household',
     name: 'Household Expenses',
     type: 'household',
-    description: 'Rent, cleaning, maintenance and common household costs.',
     memberIds: ['u1', 'u2', 'u3', 'u4'],
   },
   {
     id: 'entertainment',
     name: 'Entertainment',
     type: 'entertainment',
-    description: 'Movies, outings, games and other entertainment.',
     memberIds: ['u1', 'u2', 'u3', 'u4'],
   },
   {
     id: 'utilities',
     name: 'Utilities',
     type: 'utilities',
-    description: 'Electricity, internet, water and other utilities.',
     memberIds: ['u1', 'u2', 'u3', 'u4'],
   },
   {
     id: 'food',
     name: 'Food & Groceries',
     type: 'food',
-    description: 'Groceries, meals and shared food expenses.',
     memberIds: ['u1', 'u2', 'u3', 'u4'],
   },
 ];
@@ -166,23 +160,76 @@ export function ExpenseProvider({
 
   /*
    * ----------------------------------------
+   * SETTLED PAYMENTS
+   * ----------------------------------------
+   * Manual confirmations that an outstanding roommate payment
+   * was actually completed. This does not delete the expense.
+   */
+
+  const [settledPayments, setSettledPayments] =
+    useState<Settlement[]>(() => {
+      const saved = localStorage.getItem(
+        'roommate_settled_payments'
+      );
+
+      if (!saved) {
+        return [];
+      }
+
+      try {
+        return JSON.parse(saved) as Settlement[];
+      } catch {
+        return [];
+      }
+    });
+
+  /*
+   * ----------------------------------------
    * BILLS
    * ----------------------------------------
    */
 
-  const [bills, setBills] = useState<Bill[]>([]);
+  const [bills, setBills] = useState<Bill[]>(() => {
+    const saved = localStorage.getItem('roommate_bills');
+
+    if (!saved) {
+      return [];
+    }
+
+    try {
+      return JSON.parse(saved).map((bill: Bill) => ({
+        ...bill,
+        dueDate: new Date(bill.dueDate),
+      }));
+    } catch {
+      return [];
+    }
+  });
 
   /*
    * ----------------------------------------
    * GROUPS
    * ----------------------------------------
-   *
-   * Groups are kept in state for now.
-   * Each group contains its own memberIds.
    */
 
-  const [groups, setGroups] =
-    useState<SplitGroup[]>(initialGroups);
+  const [groups, setGroups] = useState<SplitGroup[]>(() => {
+    const saved = localStorage.getItem('roommate_groups');
+
+    if (!saved) {
+      return initialGroups;
+    }
+
+    try {
+      return JSON.parse(saved).map((group: SplitGroup) => ({
+        ...group,
+        memberIds: group.memberIds?.length
+          ? group.memberIds
+          : ['u1', 'u2', 'u3', 'u4'],
+      }));
+    } catch {
+      return initialGroups;
+    }
+  });
 
   /*
    * ----------------------------------------
@@ -203,6 +250,27 @@ export function ExpenseProvider({
       JSON.stringify(users)
     );
   }, [users]);
+
+  useEffect(() => {
+    localStorage.setItem(
+      'roommate_bills',
+      JSON.stringify(bills)
+    );
+  }, [bills]);
+
+  useEffect(() => {
+    localStorage.setItem(
+      'roommate_groups',
+      JSON.stringify(groups)
+    );
+  }, [groups]);
+
+  useEffect(() => {
+    localStorage.setItem(
+      'roommate_settled_payments',
+      JSON.stringify(settledPayments)
+    );
+  }, [settledPayments]);
 
   /*
    * ----------------------------------------
@@ -257,6 +325,18 @@ export function ExpenseProvider({
     };
 
     setUsers((prev) => [...prev, newUser]);
+
+    setGroups((prev) =>
+      prev.map((group) => ({
+        ...group,
+        memberIds: Array.from(
+          new Set([
+            ...(group.memberIds ?? []),
+            newUser.id,
+          ])
+        ),
+      }))
+    );
   };
 
   const updateUser = async (
@@ -275,8 +355,35 @@ export function ExpenseProvider({
   const deleteUser = async (
     id: string
   ): Promise<void> => {
+    const hasExpenseHistory = expenses.some((expense) => {
+      const isPayer = expense.payerId === id;
+      const isParticipant =
+        expense.participants?.includes(id) ?? false;
+      const contributed =
+        expense.contributions?.some(
+          (contribution) => contribution.userId === id
+        ) ?? false;
+
+      return isPayer || isParticipant || contributed;
+    });
+
+    if (hasExpenseHistory) {
+      throw new Error(
+        'This roommate cannot be removed because they are already involved in an expense.'
+      );
+    }
+
     setUsers((prev) =>
       prev.filter((user) => user.id !== id)
+    );
+
+    setGroups((prev) =>
+      prev.map((group) => ({
+        ...group,
+        memberIds: (group.memberIds ?? []).filter(
+          (memberId) => memberId !== id
+        ),
+      }))
     );
   };
 
@@ -306,12 +413,6 @@ export function ExpenseProvider({
     });
 
     expenses.forEach((expense) => {
-      /*
-       * New expenses always contain participants.
-       *
-       * The fallback is kept for older expenses already
-       * stored in localStorage before participants existed.
-       */
       const participants =
         expense.participants?.length
           ? expense.participants
@@ -435,8 +536,50 @@ export function ExpenseProvider({
       }
     }
 
-    return result;
-  }, [expenses, users]);
+    return result.filter(
+      (payment) =>
+        !settledPayments.some(
+          (settled) =>
+            settled.fromUserId === payment.fromUserId &&
+            settled.toUserId === payment.toUserId &&
+            Math.abs(
+              settled.amount - payment.amount
+            ) < 0.01
+        )
+    );
+  }, [expenses, users, settledPayments]);
+
+  const settlePayment = async (
+    payment: Settlement
+  ): Promise<void> => {
+    setSettledPayments((previous) => {
+      const alreadySettled = previous.some(
+        (item) =>
+          item.fromUserId === payment.fromUserId &&
+          item.toUserId === payment.toUserId &&
+          Math.abs(item.amount - payment.amount) < 0.01
+      );
+
+      return alreadySettled
+        ? previous
+        : [...previous, payment];
+    });
+  };
+
+  const unsettlePayment = async (
+    payment: Settlement
+  ): Promise<void> => {
+    setSettledPayments((previous) =>
+      previous.filter(
+        (item) =>
+          !((
+            item.fromUserId === payment.fromUserId &&
+            item.toUserId === payment.toUserId &&
+            Math.abs(item.amount - payment.amount) < 0.01
+          ))
+      )
+    );
+  };
 
   /*
    * ----------------------------------------
@@ -488,15 +631,10 @@ export function ExpenseProvider({
     const newGroup: SplitGroup = {
       ...group,
       id: crypto.randomUUID(),
-
-      /*
-       * Safety fallback.
-       *
-       * New Groups.tsx will always send memberIds,
-       * but this prevents an invalid group from being
-       * created if memberIds is accidentally missing.
-       */
-      memberIds: group.memberIds ?? [],
+      memberIds:
+        group.memberIds?.length
+          ? group.memberIds
+          : users.map((user) => user.id),
     };
 
     setGroups((prev) => [...prev, newGroup]);
@@ -509,14 +647,7 @@ export function ExpenseProvider({
     setGroups((prev) =>
       prev.map((item) =>
         item.id === id
-          ? {
-              ...item,
-              ...group,
-              memberIds:
-                group.memberIds ??
-                item.memberIds ??
-                [],
-            }
+          ? { ...item, ...group }
           : item
       )
     );
@@ -525,23 +656,16 @@ export function ExpenseProvider({
   const deleteGroup = async (
     id: string
   ): Promise<void> => {
-    /*
-     * Delete the group itself.
-     *
-     * Existing expenses are intentionally preserved.
-     * Their groupId simply becomes unmatched until the
-     * expense is edited or deleted.
-     */
+    if (id === 'household') {
+      throw new Error(
+        'The Household Expenses group cannot be deleted.'
+      );
+    }
+
     setGroups((prev) =>
       prev.filter((group) => group.id !== id)
     );
   };
-
-  /*
-   * ----------------------------------------
-   * PROVIDER
-   * ----------------------------------------
-   */
 
   return (
     <ExpenseContext.Provider
@@ -568,6 +692,9 @@ export function ExpenseProvider({
         deleteGroup,
 
         settlements,
+        settledPayments,
+        settlePayment,
+        unsettlePayment,
       }}
     >
       {children}
