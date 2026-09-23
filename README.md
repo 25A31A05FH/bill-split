@@ -1,4 +1,3 @@
-
 # ROOMMATE
 
 A shared expense management application for roommates and shared households.
@@ -9,6 +8,9 @@ ROOMMATE provides a structured way to record expenses, manage contributions, def
 
 **Live Application:**  
 https://bill-split-seven-amber.vercel.app/
+
+**Walkthrough Video:**  
+https://youtu.be/HNWGXV3dEKg
 
 **Repository:**  
 https://github.com/25A31A05FH/bill-split
@@ -102,30 +104,27 @@ For a ₹1,200 expense shared between three participants:
 
 ```text
 ₹1,200 / 3 = ₹400 per participant
-````
-
 The application compares each participant's share with their actual contribution and calculates the resulting balances.
-
----
-
-## Technology
-
-| Category   | Technology    |
-| ---------- | ------------- |
-| Frontend   | React         |
-| Language   | TypeScript    |
-| Build Tool | Vite          |
-| Styling    | Tailwind CSS  |
-| Animation  | Framer Motion |
-| Icons      | Lucide React  |
-| Routing    | React Router  |
-| Deployment | Vercel        |
-
----
-
-## Project Structure
-
-```text
+Technology
+Category
+Technology
+Frontend
+React
+Language
+TypeScript
+Build Tool
+Vite
+Styling
+Tailwind CSS
+Animation
+Framer Motion
+Icons
+Lucide React
+Routing
+React Router
+Deployment
+Vercel
+Project Structure
 src/
 ├── components/
 │   ├── features/
@@ -146,82 +145,38 @@ src/
 ├── App.tsx
 ├── main.tsx
 └── index.css
-```
-
----
-
-## Getting Started
-
-### Prerequisites
-
-* Node.js
-* npm
-
-### Installation
-
-```bash
+Getting Started
+Prerequisites
+Node.js
+npm
+Installation
 git clone https://github.com/25A31A05FH/bill-split.git
 cd bill-split
 npm install
-```
-
-### Development
-
-```bash
+Development
 npm run dev
-```
-
 The development server will be available at:
-
-```text
 http://localhost:5173
-```
-
-### Production Build
-
-```bash
+Production Build
 npm run build
-```
-
----
-
-## Deployment
-
+Deployment
 The application is deployed using Vercel.
-
-**Production URL**
-
-[https://bill-split-seven-amber.vercel.app/](https://bill-split-seven-amber.vercel.app/)
-
----
-
-## Current Scope
-
+Production URL
+https://bill-split-seven-amber.vercel.app/⁠�
+Current Scope
 ROOMMATE is currently implemented as a frontend-focused prototype.
-
 Application data is managed through the application's client-side state and browser storage. The current version does not include a production backend, authentication system, or real payment processing.
-
----
-
-## Future Development
-
+Future Development
 Potential extensions include:
-
-* User authentication
-* Cloud database integration
-* Real-time synchronization
-* Receipt OCR
-* Automated expense categorization
-* Recurring expenses
-* Monthly expense analytics
-* Notifications and reminders
-* UPI payment integration
-* Mobile application
-
----
-
-## License
-
-This project was developed as a software hackathon project.
-
-
+User authentication
+Cloud database integration
+Real-time synchronization
+Receipt OCR
+Automated expense categorization
+Recurring expenses
+Monthly expense analytics
+Notifications and reminders
+UPI payment integration
+Mobile application
+License
+This project was developed as a software hackathon project
